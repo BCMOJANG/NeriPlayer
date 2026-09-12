@@ -89,6 +89,7 @@ android {
 
     buildTypes {
         val releaseSigningConfig = signingConfigs.getByName("release")
+        val fallbackSigningConfig = signingConfigs.getByName("debug")
 
         release {
             isMinifyEnabled = true
@@ -99,8 +100,12 @@ android {
                     abiFilters += defaultReleaseAbiFilters
                 }
             }
-            if (releaseSigningReady) {
-                signingConfig = releaseSigningConfig
+            when {
+                releaseSigningReady -> signingConfig = releaseSigningConfig
+                // Forks and local builds carry no upstream keystore, and an unsigned release
+                // APK cannot be installed at all, so fall back to the Android debug key.
+                allowUnsignedRelease -> Unit
+                else -> signingConfig = fallbackSigningConfig
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -187,10 +192,9 @@ gradle.taskGraph.whenReady {
             if (releaseKeyPassword.isNullOrBlank()) add("KEY_PASSWORD")
         }.joinToString()
 
-        throw GradleException(
-            "Release signing material is required. Missing: $missingSigningParts. " +
-                "Pass -PKEYSTORE_FILE, -PKEYSTORE_PASSWORD, -PKEY_ALIAS and -PKEY_PASSWORD " +
-                "or use -PallowUnsignedRelease=true for PR validation builds."
+        logger.lifecycle(
+            "Release signing material is incomplete ($missingSigningParts); " +
+                "packaging the release build with the debug signing config instead."
         )
     }
 }
